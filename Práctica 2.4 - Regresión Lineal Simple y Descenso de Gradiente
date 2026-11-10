@@ -1,0 +1,172 @@
+# -*- coding: utf-8 -*-
+"""Práctica 2.4 - Regresión Lineal Simple y Descenso de Gradiente
+
+Implementación paso a paso de regresión lineal univariable:
+1. Simulación con datos sintéticos.
+2. Predicción de precios inmobiliarios en España (Zenodo Dataset).
+3. Análisis de convergencia y sensibilidad a hiperparámetros.
+"""
+
+# ==============================================================================
+# PARTE 1: INTRODUCCIÓN Y MODELADO CON DATOS SINTÉTICOS
+# ==============================================================================
+
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Fijar semilla para reproducibilidad
+np.random.seed(238)
+
+# Generación de datos sintéticos: y = 2x + 1 + ruido gaussiano
+X_synth = np.linspace(0, 10, 50)
+y_synth = 2 * X_synth + 1 + np.random.randn(50) * 2
+
+# Visualización inicial
+plt.figure(figsize=(7, 4))
+plt.scatter(X_synth, y_synth, color="royalblue", alpha=0.8, edgecolors="none")
+plt.title("Datos Sintéticos de Entrada")
+plt.xlabel("X")
+plt.ylabel("y")
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.show()
+
+# Hiperparámetros base
+learning_rate_synth = 0.01
+epochs_synth = 100
+
+a_synth, b_synth = 0.0, 0.0
+n_synth = len(X_synth)
+
+# Bucle de Descenso de Gradiente
+for _ in range(epochs_synth):
+    y_pred_synth = a_synth * X_synth + b_synth
+    # Derivadas parciales de MSE respecto a 'a' y 'b'
+    da = (-2 / n_synth) * np.sum(X_synth * (y_synth - y_pred_synth))
+    db = (-2 / n_synth) * np.sum(y_synth - y_pred_synth)
+    
+    a_synth -= learning_rate_synth * da
+    b_synth -= learning_rate_synth * db
+
+print(f"Ecuación ajustada: y = {a_synth:.2f}x + {b_synth:.2f}")
+
+# Representación del ajuste
+plt.figure(figsize=(7, 4))
+plt.scatter(X_synth, y_synth, label="Datos reales", color="royalblue")
+plt.plot(X_synth, a_synth * X_synth + b_synth, color="crimson", linewidth=2, 
+         label=f"Ajuste: y = {a_synth:.2f}x + {b_synth:.2f}")
+plt.xlabel("X")
+plt.ylabel("y")
+plt.legend()
+plt.grid(True, linestyle="--", alpha=0.5)
+plt.show()
+
+# Métricas sobre datos sintéticos
+y_eval = a_synth * X_synth + b_synth
+mse_synth = np.mean((y_eval - y_synth) ** 2)
+mae_synth = np.mean(np.abs(y_eval - y_synth))
+print(f"Error cuadrático medio (MSE) sintético: {mse_synth:.4f}")
+print(f"Error absoluto medio (MAE) sintético: {mae_synth:.4f}\n")
+
+
+# ==============================================================================
+# PARTE 2: DATASET REAL - MERCADO INMOBILIARIO EN ESPAÑA
+# ==============================================================================
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+
+url = "https://zenodo.org/records/14028180/files/properties_Spain.csv"
+df = pd.read_csv(url)
+
+# Limpieza y filtrado de datos
+df = df.dropna(subset=["Sale_Price", "Surface"])
+df = df[df["Contrat"] == "venta"]
+
+# Filtrado de outliers para mantener datos representativos
+df = df[(df["Sale_Price"] > 10000) & (df["Sale_Price"] < 2000000)]
+df = df[(df["Surface"] > 20) & (df["Surface"] < 500)]
+
+print(f"Muestras procesadas tras limpieza: {len(df)}")
+print(df[["Sale_Price", "Surface"]].describe())
+
+# Preparación de arrays para el entrenamiento
+X = df["Surface"].values.reshape(-1, 1)
+y = df["Sale_Price"].values
+
+# Partición 80% Train / 20% Test fijando random_state para reproducibilidad
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+print(f"\nTamaño conjunto de entrenamiento: {len(X_train)} muestras")
+print(f"Tamaño conjunto de evaluación: {len(X_test)} muestras")
+
+
+# ==============================================================================
+# PARTE 3: ENTRENAMIENTO CON HIPERPARÁMETROS ÓPTIMOS
+# ==============================================================================
+
+# Nota: Al trabajar con valores no normalizados donde Surface ~ 10^2 y Price ~ 10^5,
+# el gradiente respecto a 'a' acumula factores del orden de 10^7.
+# Una tasa de aprendizaje mayor a 0.0001 provoca divergencia numérica inmediata.
+learning_rate = 0.00001
+epochs = 100
+
+# Inicialización
+a = 0.0
+b = 0.0
+n = len(X_train)
+X_train_flat = X_train.flatten()
+
+print("\n--- Inicio del Entrenamiento ---")
+for epoch in range(1, epochs + 1):
+    y_pred = a * X_train_flat + b
+    error = y_pred - y_train
+    
+    # Cálculo analítico del gradiente (MSE)
+    da = (2 / n) * np.sum(error * X_train_flat)
+    db = (2 / n) * np.sum(error)
+    
+    # Actualización de parámetros
+    a -= learning_rate * da
+    b -= learning_rate * db
+    
+    # Monitorización periódica
+    if epoch % (epochs // 5) == 0 or epoch == 1:
+        current_mse = np.mean(error ** 2)
+        print(f"Época {epoch:3d} | MSE: {current_mse:,.0f} | a (pendiente): {a:.2f} | b (intercepto): {b:.2f}")
+
+print(f"\nParámetros convergidos: a = {a:.2f}, b = {b:.2f}")
+print(f"Modelo final: Precio (€) = {a:.2f} × Superficie (m²) + {b:.2f}")
+
+
+# ==============================================================================
+# PARTE 4: VISUALIZACIÓN Y EVALUACIÓN
+# ==============================================================================
+
+plt.figure(figsize=(10, 6))
+plt.scatter(X_train, y_train, alpha=0.35, s=20, color="steelblue", label="Datos entrenamiento")
+plt.scatter(X_test, y_test, alpha=0.45, s=20, color="orange", label="Datos prueba")
+
+x_range = np.linspace(X.min(), X.max(), 100)
+plt.plot(x_range, a * x_range + b, color="crimson", linewidth=2.5,
+         label=f"Regresión: y = {a:.2f}x + {b:.2f}")
+
+plt.xlabel("Superficie (m²)")
+plt.ylabel("Precio de venta (€)")
+plt.title(f"Ajuste Regresión Lineal — LR={learning_rate}, Épocas={epochs}")
+plt.legend()
+plt.grid(True, linestyle="--", alpha=0.4)
+plt.show()
+
+# Evaluación sobre el conjunto de test
+X_test_flat = X_test.flatten()
+y_test_pred = a * X_test_flat + b
+
+mse_test = np.mean((y_test_pred - y_test) ** 2)
+mae_test = np.mean(np.abs(y_test_pred - y_test))
+
+print("\n--- Métricas en Conjunto de Prueba (Datos no vistos) ---")
+print(f"Error Cuadrático Medio (MSE): {mse_test:,.2f} €²")
+print(f"Raíz del Error Cuadrático Medio (RMSE): {np.sqrt(mse_test):,.2f} €")
+print(f"Error Absoluto Medio (MAE): {mae_test:,.2f} €")
